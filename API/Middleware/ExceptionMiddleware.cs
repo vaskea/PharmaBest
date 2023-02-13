@@ -1,10 +1,5 @@
-using System;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace API.Middleware
 {
@@ -23,7 +18,7 @@ namespace API.Middleware
 
         public async Task InvokeAsync(HttpContext context)
         {
-            try 
+            try
             {
                 await _next(context);
             }
@@ -40,8 +35,7 @@ namespace API.Middleware
                     Title = ex.Message
                 };
 
-                var options = new JsonSerializerOptions{PropertyNamingPolicy = 
-                    JsonNamingPolicy.CamelCase};
+                var options = new JsonSerializerOptions{PropertyNamingPolicy = JsonNamingPolicy.CamelCase};
 
                 var json = JsonSerializer.Serialize(response, options);
 

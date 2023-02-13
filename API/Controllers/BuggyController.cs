@@ -1,4 +1,3 @@
-using System;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers
@@ -36,5 +35,7 @@ namespace API.Controllers
         {
             throw new Exception("This is a server error");
         }
+
+
     }
 }
