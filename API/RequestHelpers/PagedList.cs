@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
 namespace API.RequestHelpers
@@ -19,14 +15,12 @@ namespace API.RequestHelpers
             };
             AddRange(items);
         }
-
         public MetaData MetaData { get; set; }
 
-        public static async Task<PagedList<T>> ToPagedList(IQueryable<T> query, 
-            int pageNumber, int pageSize)
+        public static async Task<PagedList<T>> ToPagedList(IQueryable<T> query, int pageNumber, int pageSize)
         {
             var count = await query.CountAsync();
-            var items = await query.Skip((pageNumber-1)*pageSize).Take(pageSize).ToListAsync();
+            var items = await query.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
             return new PagedList<T>(items, count, pageNumber, pageSize);
         }
     }
