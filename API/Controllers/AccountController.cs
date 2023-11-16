@@ -1,5 +1,3 @@
-using System.Linq;
-using System.Threading.Tasks;
 using API.Data;
 using API.DTOs;
 using API.Entities;
@@ -17,7 +15,9 @@ namespace API.Controllers
         private readonly UserManager<User> _userManager;
         private readonly TokenService _tokenService;
         private readonly StoreContext _context;
-        public AccountController(UserManager<User> userManager, TokenService tokenService, StoreContext context)
+
+        public AccountController(UserManager<User> userManager, TokenService tokenService, 
+            StoreContext context)
         {
             _context = context;
             _tokenService = tokenService;
@@ -28,7 +28,6 @@ namespace API.Controllers
         public async Task<ActionResult<UserDto>> Login(LoginDto loginDto)
         {
             var user = await _userManager.FindByNameAsync(loginDto.Username);
-
             if (user == null || !await _userManager.CheckPasswordAsync(user, loginDto.Password))
                 return Unauthorized();
 
@@ -52,7 +51,7 @@ namespace API.Controllers
         }
 
         [HttpPost("register")]
-        public async Task<ActionResult> Register(RegisterDto registerDto)
+        public async Task<ActionResult> RegisterUser(RegisterDto registerDto)
         {
             var user = new User { UserName = registerDto.Username, Email = registerDto.Email };
 
@@ -89,16 +88,6 @@ namespace API.Controllers
             };
         }
 
-        [Authorize]
-        [HttpGet("savedAddress")]
-        public async Task<ActionResult<UserAddress>> GetSavedAddress()
-        {
-            return await _userManager.Users
-                .Where(x => x.UserName == User.Identity.Name)
-                .Select(user => user.Address)
-                .FirstOrDefaultAsync();
-        }
-
         private async Task<Basket> RetrieveBasket(string buyerId)
         {
             if (string.IsNullOrEmpty(buyerId))
@@ -110,7 +99,7 @@ namespace API.Controllers
             return await _context.Baskets
                 .Include(i => i.Items)
                 .ThenInclude(p => p.Product)
-                .FirstOrDefaultAsync(x => x.BuyerId == buyerId);
+                .FirstOrDefaultAsync(basket => basket.BuyerId == buyerId);
         }
     }
 }
