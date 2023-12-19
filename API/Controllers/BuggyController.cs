@@ -1,41 +1,48 @@
+﻿using API.Data;
+using API.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace API.Controllers
+namespace API.Controllers;
+
+public class BuggyController : BaseApiController
 {
-    public class BuggyController : BaseApiController
-    {
+private readonly DataContext _context;
+        public BuggyController(DataContext context)
+        {
+            _context = context;
+        }
+
+        [Authorize]
+        [HttpGet("auth")]
+        public ActionResult<string> GetSecret()
+        {
+            return "secret text";
+        }
+
         [HttpGet("not-found")]
-        public ActionResult GetNotFound()
+        public ActionResult<AppUser> GetNotFound()
         {
-            return NotFound();
-        }
+            var thing = _context.Users.Find(-1);
 
-        [HttpGet("bad-request")]
-        public ActionResult GetBadRequest()
-        {
-            return BadRequest(new ProblemDetails{Title = "This is a bad request"});
-        }
+            if (thing == null) return NotFound();
 
-        [HttpGet("unauthorised")]
-        public ActionResult GetUnauthorised()
-        {
-            return Unauthorized();
-        }
-
-        [HttpGet("validation-error")]
-        public ActionResult GetValidationError()
-        {
-            ModelState.AddModelError("Problem1", "This is the first error");
-            ModelState.AddModelError("Problem2", "This is the second error");
-            return ValidationProblem();
+            return thing;
         }
 
         [HttpGet("server-error")]
-        public ActionResult GetServerError()
+        public ActionResult<string> GetServerError()
         {
-            throw new Exception("This is a server error");
+            var thing = _context.Users.Find(-1);
+
+            var thingToReturn = thing.ToString();
+
+            return thingToReturn;
         }
 
-
-    }
+        [HttpGet("bad-request")]
+        public ActionResult<string> GetBadRequest()
+        {
+            return BadRequest("This was not a good request");
+        }
 }
