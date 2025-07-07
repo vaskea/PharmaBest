@@ -1,18 +1,12 @@
-namespace API.Entities
+using System;
+
+namespace API.Entities;
+
+public class Connection(string connectionId, string userId)
 {
-    public class Connection
-    {
-        public Connection()
-        {
-        }
+    public string ConnectionId { get; set; } = connectionId;
+    public string UserId { get; set; } = userId;
 
-        public Connection(string connectionId, string username)
-        {
-            ConnectionId = connectionId;
-            Username = username;
-        }
-
-        public string ConnectionId { get; set; }
-        public string Username { get; set; }
-    }
+    // nav property
+    public Group Group { get; set; } = null!;
 }

@@ -1,64 +1,64 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using API.DTOs;
+using System;
 using API.Entities;
-using API.Extensions;
 using API.Helpers;
 using API.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
-namespace API.Data
+namespace API.Data;
+
+public class LikesRepository(AppDbContext context) : ILikesRepository
 {
-    public class LikesRepository : ILikesRepository
+    public void AddLike(MemberLike like)
     {
-        private readonly DataContext _context;
-        public LikesRepository(DataContext context)
+        context.Likes.Add(like);
+    }
+
+    public void DeleteLike(MemberLike like)
+    {
+        context.Likes.Remove(like);
+    }
+
+    public async Task<IReadOnlyList<string>> GetCurrentMemberLikeIds(string memberId)
+    {
+        return await context.Likes
+            .Where(x => x.SourceMemberId == memberId)
+            .Select(x => x.TargetMemberId)
+            .ToListAsync();
+    }
+
+    public async Task<MemberLike?> GetMemberLike(string sourceMemberId, string targetMemberId)
+    {
+        return await context.Likes.FindAsync(sourceMemberId, targetMemberId);
+    }
+
+    public async Task<PaginatedResult<Member>> GetMemberLikes(LikesParams likesParams)
+    {
+        var query = context.Likes.AsQueryable();
+        IQueryable<Member> result;
+
+        switch (likesParams.Predicate)
         {
-            _context = context;
+            case "liked":
+                result = query
+                    .Where(like => like.SourceMemberId == likesParams.MemberId)
+                    .Select(like => like.TargetMember);
+                break;
+            case "likedBy":
+                result = query
+                    .Where(like => like.TargetMemberId == likesParams.MemberId)
+                    .Select(like => like.SourceMember);
+                break;
+            default: // mutual
+                var likeIds = await GetCurrentMemberLikeIds(likesParams.MemberId);
+
+                result = query
+                    .Where(x => x.TargetMemberId == likesParams.MemberId
+                        && likeIds.Contains(x.SourceMemberId))
+                    .Select(x => x.SourceMember);
+                break;
         }
-
-        public async Task<UserLike> GetUserLike(int sourceUserId, int likedUserId)
-        {
-            return await _context.Likes.FindAsync(sourceUserId, likedUserId);
-        }
-
-        public async Task<PagedList<LikeDto>> GetUserLikes(LikesParams likesParams)
-        {
-            var users = _context.Users.OrderBy(u => u.UserName).AsQueryable();
-            var likes = _context.Likes.AsQueryable();
-
-            if (likesParams.Predicate == "liked")
-            {
-                likes = likes.Where(like => like.SourceUserId == likesParams.UserId);
-                users = likes.Select(like => like.LikedUser);
-            }
-
-            if (likesParams.Predicate == "likedBy")
-            {
-                likes = likes.Where(like => like.LikedUserId == likesParams.UserId);
-                users = likes.Select(like => like.SourceUser);
-            }
-
-            var likedUsers = users.Select(user => new LikeDto
-            {
-                Username = user.UserName,
-                KnownAs = user.KnownAs,
-                Age = user.DateOfBirth.CalculateAge(),
-                PhotoUrl = user.Photos.FirstOrDefault(p => p.IsMain).Url,
-                City = user.City,
-                Id = user.Id
-            });
-
-            return await PagedList<LikeDto>.CreateAsync(likedUsers, 
-                likesParams.PageNumber, likesParams.PageSize);
-        }
-
-        public async Task<AppUser> GetUserWithLikes(int userId)
-        {
-            return await _context.Users
-                .Include(x => x.LikedUsers)
-                .FirstOrDefaultAsync(x => x.Id == userId);
-        }
+        
+        return await PaginationHelper.CreateAsync(result,
+            likesParams.PageNumber, likesParams.PageSize);
     }
 }

@@ -1,71 +1,121 @@
+using System;
+using System.Security.Cryptography;
+using System.Text;
+using API.Data;
+using API.DTOs;
+using API.Entities;
+using API.Extensions;
+using API.Interfaces;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
 namespace API.Controllers;
 
-public class AccountController : BaseApiController
+public class AccountController(UserManager<AppUser> userManager, ITokenService tokenService) : BaseApiController
 {
-    private readonly ITokenService _tokenService;
-    private readonly IMapper _mapper;
-    private readonly UserManager<AppUser> _userManager;
-    private readonly SignInManager<AppUser> _signInManager;
-    public AccountController(UserManager<AppUser> userManager, SignInManager<AppUser> signInManager, ITokenService tokenService, IMapper mapper)
-    {
-        _signInManager = signInManager;
-        _userManager = userManager;
-        _mapper = mapper;
-        _tokenService = tokenService;
-    }
-
-    [HttpPost("register")]
+    [HttpPost("register")] // api/account/register
     public async Task<ActionResult<UserDto>> Register(RegisterDto registerDto)
     {
-        if (await UserExists(registerDto.Username)) return BadRequest("Username is taken");
-
-        var user = _mapper.Map<AppUser>(registerDto);
-
-        user.UserName = registerDto.Username.ToLower();
-
-        var result = await _userManager.CreateAsync(user, registerDto.Password);
-
-        if (!result.Succeeded) return BadRequest(result.Errors);
-
-        var roleResult = await _userManager.AddToRoleAsync(user, "Member");
-
-        if (!roleResult.Succeeded) return BadRequest(result.Errors);
-
-        return new UserDto
+        var user = new AppUser
         {
-            Username = user.UserName,
-            Token = await _tokenService.CreateToken(user),
-            KnownAs = user.KnownAs,
-            Gender = user.Gender
+            DisplayName = registerDto.DisplayName,
+            Email = registerDto.Email,
+            UserName = registerDto.Email,
+            Member = new Member
+            {
+                DisplayName = registerDto.DisplayName,
+                Gender = registerDto.Gender,
+                City = registerDto.City,
+                Country = registerDto.Country,
+                DateOfBirth = registerDto.DateOfBirth
+            }
         };
+
+        var result = await userManager.CreateAsync(user, registerDto.Password);
+
+        if (!result.Succeeded)
+        {
+            foreach (var error in result.Errors)
+            {
+                ModelState.AddModelError("identity", error.Description);
+            }
+
+            return ValidationProblem();
+        }
+
+        await userManager.AddToRoleAsync(user, "Member");
+
+        await SetRefreshTokenCookie(user);
+
+        return await user.ToDto(tokenService);
     }
 
     [HttpPost("login")]
     public async Task<ActionResult<UserDto>> Login(LoginDto loginDto)
     {
-        var user = await _userManager.Users
-            .Include(p => p.Photos)
-            .SingleOrDefaultAsync(x => x.UserName == loginDto.Username.ToLower());
+        var user = await userManager.FindByEmailAsync(loginDto.Email);
 
-        if (user == null) return Unauthorized("Invalid username");
+        if (user == null) return Unauthorized("Invalid email address");
 
-        var result = await _signInManager
-            .CheckPasswordSignInAsync(user, loginDto.Password, false);
+        var result = await userManager.CheckPasswordAsync(user, loginDto.Password);
 
-        if (!result.Succeeded) return Unauthorized();
+        if (!result) return Unauthorized("Invalid password");
 
-        return new UserDto
-        {
-            Username = user.UserName,
-            Token = await _tokenService.CreateToken(user),
-            PhotoUrl = user.Photos.FirstOrDefault(x => x.IsMain)?.Url,
-            KnownAs = user.KnownAs,
-            Gender = user.Gender
-        };
+        await SetRefreshTokenCookie(user);
+
+        return await user.ToDto(tokenService);
     }
 
-    private async Task<bool> UserExists(string username)
+    [HttpPost("refresh-token")]
+    public async Task<ActionResult<UserDto>> RefreshToken()
     {
-        return await _userManager.Users.AnyAsync(x => x.UserName == username.ToLower());
+        var refreshToken = Request.Cookies["refreshToken"];
+        if (refreshToken == null) return NoContent();
+
+        var user = await userManager.Users
+            .FirstOrDefaultAsync(x => x.RefreshToken == refreshToken
+                && x.RefreshTokenExpiry > DateTime.UtcNow);
+
+        if (user == null) return Unauthorized();
+
+        await SetRefreshTokenCookie(user);
+
+        return await user.ToDto(tokenService);
+    }
+
+    private async Task SetRefreshTokenCookie(AppUser user)
+    {
+        var refreshToken = tokenService.GenerateRefreshToken();
+        user.RefreshToken = refreshToken;
+        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(7);
+        await userManager.UpdateAsync(user);
+
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Expires = DateTime.UtcNow.AddDays(7)
+        };
+
+        Response.Cookies.Append("refreshToken", refreshToken, cookieOptions);
+    }
+
+    [Authorize]
+    [HttpPost("logout")]
+    public async Task<ActionResult> Logout()
+    {
+        await userManager.Users
+            .Where(x => x.Id == User.GetMemberId())
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.RefreshToken, _ => null)
+                .SetProperty(x => x.RefreshTokenExpiry, _ => null)
+                );
+
+        Response.Cookies.Delete("refreshToken");
+
+        return Ok();
     }
 }

@@ -1,40 +1,37 @@
 using System;
-using System.Threading.Tasks;
+using System.Security.Claims;
 using API.Extensions;
-using API.Helpers;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 
-namespace API.SignalR
+namespace API.SignalR;
+
+[Authorize]
+public class PresenceHub(PresenceTracker presenceTracker) : Hub
 {
-    [Authorize]
-    public class PresenceHub : Hub
+    public override async Task OnConnectedAsync()
     {
-        private readonly PresenceTracker _tracker;
-        public PresenceHub(PresenceTracker tracker)
-        {
-            _tracker = tracker;
-        }
+        await presenceTracker.UserConnected(GetUserId(), Context.ConnectionId);
+        await Clients.Others.SendAsync("UserOnline", GetUserId());
 
-        public override async Task OnConnectedAsync()
-        {
-            var isOnline = await _tracker.UserConnected(Context.User.GetUsername(), Context.ConnectionId);
-            if (isOnline)
-                await Clients.Others.SendAsync("UserIsOnline", Context.User.GetUsername());
+        var currentUsers = await presenceTracker.GetOnlineUsers();
+        await Clients.All.SendAsync("GetOnlineUsers", currentUsers);
+    }
 
-            var currentUsers = await _tracker.GetOnlineUsers();
-            await Clients.Caller.SendAsync("GetOnlineUsers", currentUsers);
-        }
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        await presenceTracker.UserDisconnected(GetUserId(), Context.ConnectionId);
+        await Clients.Others.SendAsync("UserOffline", GetUserId());
 
-        public override async Task OnDisconnectedAsync(Exception exception)
-        {
-            var isOffline = await _tracker.UserDisconnected(Context.User.GetUsername(), Context.ConnectionId);
-            
-            if (isOffline)
-                await Clients.Others.SendAsync("UserIsOffline", Context.User.GetUsername());
+        var currentUsers = await presenceTracker.GetOnlineUsers();
+        await Clients.All.SendAsync("GetOnlineUsers", currentUsers);
 
-            await base.OnDisconnectedAsync(exception);
-        }
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    private string GetUserId()
+    {
+        return Context.User?.GetMemberId()
+            ?? throw new HubException("Cannot get member id");
     }
 }

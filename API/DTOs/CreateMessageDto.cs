@@ -1,8 +1,9 @@
-namespace API.DTOs
+using System;
+
+namespace API.DTOs;
+
+public class CreateMessageDto
 {
-    public class CreateMessageDto
-    {
-        public string RecipientUsername { get; set; }
-        public string Content { get; set; }
-    }
+    public required string RecipientId { get; set; }
+    public required string Content { get; set; }
 }

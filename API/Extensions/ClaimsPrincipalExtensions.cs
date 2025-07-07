@@ -1,16 +1,13 @@
-﻿using System.Security.Claims;
+using System;
+using System.Security.Claims;
 
 namespace API.Extensions;
 
 public static class ClaimsPrincipalExtensions
 {
-    public static string GetUsername(this ClaimsPrincipal user)
+    public static string GetMemberId(this ClaimsPrincipal user)
     {
-        return user.FindFirst(ClaimTypes.Name)?.Value;
-    }
-
-    public static int GetUserId(this ClaimsPrincipal user)
-    {
-        return int.Parse(user.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+        return user.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? throw new Exception("Cannot get memberId from token");
     }
 }

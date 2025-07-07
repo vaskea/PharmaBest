@@ -1,36 +1,42 @@
-using System.Threading.Tasks;
+using System;
 using API.Interfaces;
-using AutoMapper;
+using Microsoft.EntityFrameworkCore;
 
-namespace API.Data
+namespace API.Data;
+
+public class UnitOfWork(AppDbContext context) : IUnitOfWork
 {
-    public class UnitOfWork : IUnitOfWork
+    private IMemberRepository? _memberRepository;
+    private IMessageRepository? _messageRepository;
+    private ILikesRepository? _likesRepository;
+    private IPhotoRepository? _photoRepository;
+
+    public IMemberRepository MemberRepository => _memberRepository
+        ??= new MemberRepository(context);
+
+    public IMessageRepository MessageRepository => _messageRepository
+        ??= new MessageRepository(context);
+
+    public ILikesRepository LikesRepository => _likesRepository
+        ??= new LikesRepository(context);
+
+    public IPhotoRepository PhotoRepository => _photoRepository
+        ??= new PhotoRepository(context);
+
+    public async Task<bool> Complete()
     {
-        private readonly IMapper _mapper;
-        private readonly DataContext _context;
-        public UnitOfWork(DataContext context, IMapper mapper)
+        try
         {
-            _context = context;
-            _mapper = mapper;
+            return await context.SaveChangesAsync() > 0;
         }
-
-        public IUserRepository UserRepository => new UserRepository(_context, _mapper);
-
-        public IMessageRepository MessageRepository => new MessageRepository(_context, _mapper);
-
-        public ILikesRepository LikesRepository => new LikesRepository(_context);
-
-        public async Task<bool> Complete()
+        catch (DbUpdateException ex)
         {
-            return await _context.SaveChangesAsync() > 0;
+            throw new Exception("An error occured while saving changes", ex);
         }
+    }
 
-        public bool HasChanges()
-        {
-            _context.ChangeTracker.DetectChanges();
-            var changes = _context.ChangeTracker.HasChanges();
-
-            return changes;
-        }
+    public bool HasChanges()
+    {
+        return context.ChangeTracker.HasChanges();
     }
 }

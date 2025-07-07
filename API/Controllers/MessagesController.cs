@@ -1,61 +1,75 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using System;
 using API.DTOs;
 using API.Entities;
 using API.Extensions;
 using API.Helpers;
 using API.Interfaces;
-using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace API.Controllers
+namespace API.Controllers;
+
+public class MessagesController(IUnitOfWork uow) : BaseApiController
 {
-    [Authorize]
-    public class MessagesController : BaseApiController
+    [HttpPost]
+    public async Task<ActionResult<MessageDto>> CreateMessage(CreateMessageDto createMessageDto)
     {
-        private readonly IMapper _mapper;
-        private readonly IUnitOfWork _unitOfWork;
-        public MessagesController(IMapper mapper, IUnitOfWork unitOfWork)
+        var sender = await uow.MemberRepository.GetMemberByIdAsync(User.GetMemberId());
+        var recipient = await uow.MemberRepository.GetMemberByIdAsync(createMessageDto.RecipientId);
+
+        if (recipient == null || sender == null || sender.Id == createMessageDto.RecipientId)
+            return BadRequest("Cannot send this message");
+
+        var message = new Message
         {
-            _unitOfWork = unitOfWork;
-            _mapper = mapper;
+            SenderId = sender.Id,
+            RecipientId = recipient.Id,
+            Content = createMessageDto.Content
+        };
+
+        uow.MessageRepository.AddMessage(message);
+
+        if (await uow.Complete()) return message.ToDto();
+
+        return BadRequest("Failed to send message");
+    }
+
+    [HttpGet]
+    public async Task<ActionResult<PaginatedResult<MessageDto>>> GetMessagesByContainer(
+        [FromQuery] MessageParams messageParams)
+    {
+        messageParams.MemberId = User.GetMemberId();
+
+        return await uow.MessageRepository.GetMessagesForMember(messageParams);
+    }
+
+    [HttpGet("thread/{recipientId}")]
+    public async Task<ActionResult<IReadOnlyList<MessageDto>>> GetMessageThread(string recipientId)
+    {
+        return Ok(await uow.MessageRepository.GetMessageThread(User.GetMemberId(), recipientId));
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<ActionResult> DeleteMessage(string id)
+    {
+        var memberId = User.GetMemberId();
+
+        var message = await uow.MessageRepository.GetMessage(id);
+
+        if (message == null) return BadRequest("Cannot delete this message");
+
+        if (message.SenderId != memberId && message.RecipientId != memberId)
+            return BadRequest("You cannot delete this message");
+
+        if (message.SenderId == memberId) message.SenderDeleted = true;
+        if (message.RecipientId == memberId) message.RecipientDeleted = true;
+
+        if (message is { SenderDeleted: true, RecipientDeleted: true })
+        {
+            uow.MessageRepository.DeleteMessage(message);
         }
 
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<MessageDto>>> GetMessagesForUser([FromQuery]
-            MessageParams messageParams)
-        {
-            messageParams.Username = User.GetUsername();
+        if (await uow.Complete()) return Ok();
 
-            var messages = await _unitOfWork.MessageRepository.GetMessagesForUser(messageParams);
-
-            Response.AddPaginationHeader(messages.CurrentPage, messages.PageSize,
-                messages.TotalCount, messages.TotalPages);
-
-            return messages;
-        }
-
-        [HttpDelete("{id}")]
-        public async Task<ActionResult> DeleteMessage(int id)
-        {
-            var username = User.GetUsername();
-
-            var message = await _unitOfWork.MessageRepository.GetMessage(id);
-
-            if (message.Sender.UserName != username && message.Recipient.UserName != username)
-                return Unauthorized();
-
-            if (message.Sender.UserName == username) message.SenderDeleted = true;
-
-            if (message.Recipient.UserName == username) message.RecipientDeleted = true;
-
-            if (message.SenderDeleted && message.RecipientDeleted)
-                _unitOfWork.MessageRepository.DeleteMessage(message);
-
-            if (await _unitOfWork.Complete()) return Ok();
-
-            return BadRequest("Problem deleting the message");
-        }
+        return BadRequest("Problem deleting the message");
     }
 }

@@ -1,21 +1,13 @@
-using System.Collections.Generic;
+using System;
 using System.ComponentModel.DataAnnotations;
 
-namespace API.Entities
+namespace API.Entities;
+
+public class Group(string name)
 {
-    public class Group
-    {
-        public Group()
-        {
-        }
+    [Key]
+    public string Name { get; set; } = name;
 
-        public Group(string name)
-        {
-            Name = name;
-        }
-
-        [Key]
-        public string Name { get; set; }
-        public ICollection<Connection> Connections { get; set; } = new List<Connection>();
-    }
+    // nav properties
+    public ICollection<Connection> Connections { get; set; } = [];
 }

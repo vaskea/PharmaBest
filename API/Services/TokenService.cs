@@ -1,54 +1,53 @@
 using System;
-using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
-using System.Linq;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using API.Entities;
 using API.Interfaces;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 
-namespace API.Services
+namespace API.Services;
+
+public class TokenService(IConfiguration config, UserManager<AppUser> userManager) : ITokenService
 {
-    public class TokenService : ITokenService
+    public async Task<string> CreateToken(AppUser user)
     {
-        private readonly SymmetricSecurityKey _key;
-        private readonly UserManager<AppUser> _userManager;
-        public TokenService(IConfiguration config, UserManager<AppUser> userManager)
+        var tokenKey = config["TokenKey"] ?? throw new Exception("Cannot get token key");
+        if (tokenKey.Length < 64)
+            throw new Exception("Your token key needs to be >= 64 characters");
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(tokenKey));
+
+        var claims = new List<Claim>
         {
-            _userManager = userManager;
-            _key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["TokenKey"]));
-        }
+            new(ClaimTypes.Email, user.Email!),
+            new(ClaimTypes.NameIdentifier, user.Id)
+        };
 
-        public async Task<string> CreateToken(AppUser user)
+        var roles = await userManager.GetRolesAsync(user);
+
+        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
+
+        var tokenDescriptor = new SecurityTokenDescriptor
         {
-            var claims = new List<Claim>
-            {
-                new Claim(JwtRegisteredClaimNames.NameId, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.UniqueName, user.UserName),
-            };
+            Subject = new ClaimsIdentity(claims),
+            Expires = DateTime.UtcNow.AddMinutes(7),
+            SigningCredentials = creds
+        };
 
-            var roles = await _userManager.GetRolesAsync(user);
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var token = tokenHandler.CreateToken(tokenDescriptor);
 
-            claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+        return tokenHandler.WriteToken(token);
+    }
 
-            var creds = new SigningCredentials(_key, SecurityAlgorithms.HmacSha512Signature);
-
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(claims),
-                Expires = DateTime.Now.AddDays(7),
-                SigningCredentials = creds
-            };
-
-            var tokenHandler = new JwtSecurityTokenHandler();
-
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-
-            return tokenHandler.WriteToken(token);
-        }
+    public string GenerateRefreshToken()
+    {
+        var randomBytes = RandomNumberGenerator.GetBytes(64);
+        return Convert.ToBase64String(randomBytes);
     }
 }
